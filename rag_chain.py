@@ -53,33 +53,52 @@ def _get_vectorstore():
     return get_or_create_vectorstore()
 
 
+def _chunk_source(chunk: Document) -> str:
+    return chunk.metadata.get("filename", chunk.metadata.get("source", "unknown"))
+
+
+def _extract_sources(chunks: list[Document]) -> list[str]:
+    """Return unique source filenames in retrieval order."""
+    seen: set[str] = set()
+    sources: list[str] = []
+    for chunk in chunks:
+        source = _chunk_source(chunk)
+        if source not in seen:
+            seen.add(source)
+            sources.append(source)
+    return sources
+
+
 def _format_context(chunks: list[Document]) -> str:
     if not chunks:
         return "(No matching notes found.)"
 
     parts: list[str] = []
     for index, chunk in enumerate(chunks, start=1):
-        source = chunk.metadata.get("filename", chunk.metadata.get("source", "unknown"))
+        source = _chunk_source(chunk)
         parts.append(f"[Excerpt {index} — {source}]\n{chunk.page_content}")
     return "\n\n".join(parts)
 
 
-def answer_question(query: str, *, k: int = TOP_K) -> str:
+def answer_question(query: str, *, k: int = TOP_K) -> tuple[str, list[str]]:
     """
     Retrieve the top ``k`` note chunks, build a grounded prompt, and return
-    the Groq LLM answer.
+    the Groq LLM answer plus deduplicated source filenames used for context.
     """
     store = _get_vectorstore()
     chunks = similarity_search(store, query, k=k)
+    sources = _extract_sources(chunks)
     context = _format_context(chunks)
 
     chain = PROMPT | _get_llm()
     response = chain.invoke({"context": context, "question": query})
-    return response.content
+    return response.content, sources
 
 
 if __name__ == "__main__":
     test_query = "What is Python used for?"
+    answer, sources = answer_question(test_query)
+
     print(f'Question: "{test_query}"\n')
-    print("Answer:")
-    print(answer_question(test_query))
+    print(f"Answer: {answer}")
+    print(f"Sources: {', '.join(sources) if sources else '(none)'}")
