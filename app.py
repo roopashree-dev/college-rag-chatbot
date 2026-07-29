@@ -1,42 +1,52 @@
 import streamlit as st
 from rag_chain import answer_question
 
-st.set_page_config(page_title="College Notes RAG Chatbot")
 st.title("College Notes RAG Chatbot")
 
-# st.session_state persists data across reruns of the script.
-# Streamlit reruns the whole file top-to-bottom on every interaction,
-# so without session_state, your chat history would reset and vanish
-# every time you sent a new message.
+# Initialize chat history
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Replay the existing conversation so it stays visible
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.write(msg["content"])
-        if msg.get("sources"):
-            st.caption(f"Source: {', '.join(msg['sources'])}")
+# Display existing chat history
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+        # Show sources for assistant messages
+        if message["role"] == "assistant" and message.get("sources"):
+            for source in message["sources"]:
+                st.caption(f"Source: {source}")
 
-# Get new input from the user
-user_question = st.chat_input("Ask a question about your notes...")
-
-if user_question:
-    # Show the user's message immediately
-    st.session_state.messages.append({"role": "user", "content": user_question})
+# Chat input
+if prompt := st.chat_input("Ask a question about your college notes..."):
+    # Add and display user message
+    st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
-        st.write(user_question)
+        st.markdown(prompt)
 
-    # Generate and show the bot's answer
+    # Generate and display assistant response
     with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
-            answer, sources = answer_question(user_question)
-        st.write(answer)
-        if sources:
-            st.caption(f"Source: {', '.join(sources)}")
+        with st.spinner("Searching notes and generating answer..."):
+            result = answer_question(prompt)
 
-    st.session_state.messages.append({
-        "role": "assistant",
-        "content": answer,
-        "sources": sources
-    })
+            # Handle answer_question returning either a string or a tuple
+            if isinstance(result, tuple) and len(result) == 2:
+                answer, sources = result
+                if isinstance(sources, str):
+                    sources = [sources]
+            else:
+                answer = result
+                sources = []
+
+        st.markdown(answer)
+
+        # Display source filenames
+        if sources:
+            for source in sources:
+                st.caption(f"Source: {source}")
+
+        # Save assistant response to history
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": answer,
+            "sources": sources,
+        })
